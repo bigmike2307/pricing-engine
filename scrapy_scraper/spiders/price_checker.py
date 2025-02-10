@@ -31,9 +31,9 @@ def setup_driver():
 def clean_price(price):
     if not price:
         return "N/A"
-
-    price = price.strip()
     
+    price = price.strip()
+
     price = price.replace("\u20A6", "₦").replace("N", "₦").replace("₦₦", "₦")
 
     matches = re.findall(r'₦?\s?[\d,.]+', price)
@@ -50,14 +50,14 @@ def fetch_page_content(url, driver):
     driver.get(url)
 
     try:
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
     except Exception:
         logging.warning(f"Page load timeout for {url}")
 
-    # **1️⃣ JavaScript Extraction**
+    # JavaScript Extraction for Price
     try:
         price_js = driver.execute_script("""
-            let priceElements = document.querySelectorAll('span.a-price-whole, span.a-offscreen, span.price, p.price, div.product-price, [itemprop="price"], [class*="price"], .-b -ltr -tal -fs24, .price-box, .-b -ltr -tal');
+            let priceElements = document.querySelectorAll('span.a-price-whole, span.a-offscreen, span.price, p.price, div.product-price, div.prc, div[class*="price"], [itemprop="price"], .-b -ltr -tal, .price-box, span#prcIsum, .item-price, .display-price');
             let priceList = Array.from(priceElements).map(el => el.innerText.trim());
             return priceList.length > 0 ? priceList[0] : null;
         """)
@@ -66,10 +66,10 @@ def fetch_page_content(url, driver):
         logging.error(f"JavaScript Extraction Failed: {e}")
         price_js = None
 
-    # **2️⃣ XPath Extraction for Jumia & Other Dynamic Sites**
+    # XPath Extraction for Price
     try:
-        price_xpath = WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.XPATH, "//span[contains(text(),'₦') or contains(@class, 'price')]"))
+        price_xpath = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//span[contains(text(),'₦') or contains(@class, 'price') or contains(@id, 'prcIsum')]"))
         ).text
         logging.info(f"Extracted Price (XPath): {price_xpath}")
     except Exception:
@@ -83,18 +83,17 @@ def extract_product_data(url, driver):
 
     # Extract product name
     product_name = None
-    for selector in ["span#productTitle", "h1", "h2.product-title", "h1.product_name", ".product-name", ".-fs20 -pts -pbxs"]:
+    for selector in ["span#productTitle", "h1", "h2.product-title", "h1.product_name", ".product-name", ".-fs20 -pts -pbxs", ".product-title", ".prod-title"]:
         product_element = soup.select_one(selector)
         if product_element:
             product_name = product_element.get_text(strip=True)
             break
     product_name = product_name if product_name else "N/A"
 
-    # Extract price using JavaScript first, then fallback to HTML
+    # Use extracted price, fallback to HTML if necessary
     price = price_js if price_js else "N/A"
-
     if price == "N/A":
-        for selector in ["span.a-price-whole", "span.a-offscreen", "span.price", "p.price", "div.product-price", ".-b -ltr -tal -fs24"]:
+        for selector in ["span.a-price-whole", "span.a-offscreen", "span.price", "p.price", "div.product-price", ".-b -ltr -tal -fs24", "span#prcIsum", ".price", ".prc"]:
             price_element = soup.select_one(selector)
             if price_element:
                 raw_price = price_element.get_text(strip=True)
@@ -103,7 +102,7 @@ def extract_product_data(url, driver):
 
     # Extract description
     description = None
-    for selector in ["div#feature-bullets ul", "div.product-description", "p.description", "meta[name='description']"]:
+    for selector in ["div#feature-bullets ul", "div.product-description", "p.description", "meta[name='description']", ".product-desc", ".prod-desc"]:
         desc_element = soup.select_one(selector)
         if desc_element:
             description = desc_element.get("content") if "meta" in selector else desc_element.get_text(strip=True)
@@ -144,3 +143,4 @@ if __name__ == "__main__":
         save_data_to_csv(data)
     finally:
         driver.quit()
+
