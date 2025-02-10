@@ -54,7 +54,7 @@ def fetch_page_content(url, driver):
     except Exception:
         logging.warning(f"Page load timeout for {url}")
 
-    # JavaScript Extraction for Price
+
     try:
         price_js = driver.execute_script("""
             let priceElements = document.querySelectorAll('span.a-price-whole, span.a-offscreen, span.price, p.price, div.product-price, div.prc, div[class*="price"], [itemprop="price"], .-b -ltr -tal, .price-box, span#prcIsum, .item-price, .display-price');
@@ -66,7 +66,7 @@ def fetch_page_content(url, driver):
         logging.error(f"JavaScript Extraction Failed: {e}")
         price_js = None
 
-    # XPath Extraction for Price
+    
     try:
         price_xpath = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, "//span[contains(text(),'₦') or contains(@class, 'price') or contains(@id, 'prcIsum')]"))
@@ -81,7 +81,7 @@ def fetch_page_content(url, driver):
 def extract_product_data(url, driver):
     soup, price_js = fetch_page_content(url, driver)
 
-    # Extract product name
+    
     product_name = None
     for selector in ["span#productTitle", "h1", "h2.product-title", "h1.product_name", ".product-name", ".-fs20 -pts -pbxs", ".product-title", ".prod-title"]:
         product_element = soup.select_one(selector)
@@ -90,7 +90,7 @@ def extract_product_data(url, driver):
             break
     product_name = product_name if product_name else "N/A"
 
-    # Use extracted price, fallback to HTML if necessary
+    
     price = price_js if price_js else "N/A"
     if price == "N/A":
         for selector in ["span.a-price-whole", "span.a-offscreen", "span.price", "p.price", "div.product-price", ".-b -ltr -tal -fs24", "span#prcIsum", ".price", ".prc"]:
@@ -100,7 +100,7 @@ def extract_product_data(url, driver):
                 price = clean_price(raw_price)
                 break
 
-    # Extract description
+            
     description = None
     for selector in ["div#feature-bullets ul", "div.product-description", "p.description", "meta[name='description']", ".product-desc", ".prod-desc"]:
         desc_element = soup.select_one(selector)
