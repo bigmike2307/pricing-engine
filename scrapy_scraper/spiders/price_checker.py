@@ -1,11 +1,9 @@
 import logging
-import csv
 import re
-import time
-
+from datetime import datetime
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -15,7 +13,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 def setup_driver():
-
+    """Sets up a headless Chrome WebDriver for scraping."""
     options = Options()
     options.add_argument("--headless")
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -29,118 +27,73 @@ def setup_driver():
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 def clean_price(price):
+    """Cleans and formats extracted price strings."""
     if not price:
         return "N/A"
     
-    price = price.strip()
-
-    price = price.replace("\u20A6", "₦").replace("N", "₦").replace("₦₦", "₦")
-
-    matches = re.findall(r'₦?\s?[\d,.]+', price)
-
-    if matches:
-        cleaned_price = min(matches, key=lambda p: len(p))
-        return cleaned_price.strip()
+    price = price.strip().replace("\u20A6", "₦").replace("N", "₦").replace("₦₦", "₦")
+    price = re.sub(r"\s+", "", price)  # Remove unnecessary spaces
+    matches = re.findall(r'([₦$€£₹])?\s?([\d,.]+)', price)  # Capture currency + amount
     
+    if matches:
+        return f"{matches[0][0] or ''}{matches[0][1]}"
     return "N/A"
 
-def fetch_page_content(url, driver):
-
-    logging.info(f"Fetching page: {url}")
+def fetch_amazon_page_content(url, driver):
+    """Fetches Amazon product page content."""
     driver.get(url)
-
     try:
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-    except Exception:
-        logging.warning(f"Page load timeout for {url}")
-
-
-    try:
-        price_js = driver.execute_script("""
-            let priceElements = document.querySelectorAll('span.a-price-whole, span.a-offscreen, span.price, p.price, div.product-price, div.prc, div[class*="price"], [itemprop="price"], .-b -ltr -tal, .price-box, span#prcIsum, .item-price, .display-price');
-            let priceList = Array.from(priceElements).map(el => el.innerText.trim());
-            return priceList.length > 0 ? priceList[0] : null;
-        """)
-        logging.info(f"Extracted Price (JS): {price_js}")
     except Exception as e:
-        logging.error(f"JavaScript Extraction Failed: {e}")
-        price_js = None
-
-    
-    try:
-        price_xpath = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//span[contains(text(),'₦') or contains(@class, 'price') or contains(@id, 'prcIsum')]"))
-        ).text
-        logging.info(f"Extracted Price (XPath): {price_xpath}")
-    except Exception:
-        price_xpath = None
+        logging.warning(f"Page load timeout for Amazon {url}: {e}")
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
-    return soup, clean_price(price_js or price_xpath)
+    
+    # Extract product name
+    product_name = soup.select_one("span#productTitle")
+    product_name = product_name.get_text(strip=True) if product_name else "N/A"
+    
+    # Extract current price
+    current_price = soup.select_one("span.a-price-whole, span.a-offscreen")
+    current_price = clean_price(current_price.get_text(strip=True)) if current_price else "N/A"
+
+    # Extract previous price (discounted price)
+    previous_price = soup.select_one("span.a-text-strike")
+    previous_price = clean_price(previous_price.get_text(strip=True)) if previous_price else "N/A"
+    
+    # Description section
+    description = soup.select_one("div#productDescription")
+    description = description.get_text(strip=True) if description else "N/A"
+    
+    return product_name, current_price, previous_price, description
 
 def extract_product_data(url, driver):
-    soup, price_js = fetch_page_content(url, driver)
+    """Extracts product details including name, prices, and detailed description."""
+    product_name, current_price, previous_price, description = fetch_amazon_page_content(url, driver)
 
-    
-    product_name = None
-    for selector in ["span#productTitle", "h1", "h2.product-title", "h1.product_name", ".product-name", ".-fs20 -pts -pbxs", ".product-title", ".prod-title"]:
-        product_element = soup.select_one(selector)
-        if product_element:
-            product_name = product_element.get_text(strip=True)
-            break
-    product_name = product_name if product_name else "N/A"
+    # Calculate discount
+    discount = "0%"
+    if previous_price != "N/A" and current_price != "N/A":
+        try:
+            prev_price_num = float(re.sub(r"[^\d.]", "", previous_price))
+            price_num = float(re.sub(r"[^\d.]", "", current_price))
+            discount = f"{round((prev_price_num - price_num) / prev_price_num * 100, 2)}%"
+        except Exception:
+            pass
 
-    
-    price = price_js if price_js else "N/A"
-    if price == "N/A":
-        for selector in ["span.a-price-whole", "span.a-offscreen", "span.price", "p.price", "div.product-price", ".-b -ltr -tal -fs24", "span#prcIsum", ".price", ".prc"]:
-            price_element = soup.select_one(selector)
-            if price_element:
-                raw_price = price_element.get_text(strip=True)
-                price = clean_price(raw_price)
-                break
-
-            
-    description = None
-    for selector in ["div#feature-bullets ul", "div.product-description", "p.description", "meta[name='description']", ".product-desc", ".prod-desc"]:
-        desc_element = soup.select_one(selector)
-        if desc_element:
-            description = desc_element.get("content") if "meta" in selector else desc_element.get_text(strip=True)
-            break
-    description = description if description else "N/A"
-
-    extracted_data = {
-        "URL": url,
-        "Product Name": product_name,
-        "Price": price,
-        "Description": description
-    }
-    logging.info(f"Extracted Data: {extracted_data}")
-    return extracted_data
-
-def save_data_to_csv(data, filename="extracted_data.csv"):
-    file_exists = False
-    try:
-        with open(filename, "r", newline="", encoding="utf-8") as f:
-            file_exists = bool(f.readline())
-    except FileNotFoundError:
-        pass
-
-    with open(filename, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=data.keys())
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(data)
-
-    logging.info(f"Data appended to {filename}")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return {"Timestamp": timestamp, "URL": url, "Product Name": product_name, "Current Price": current_price, "Previous Price": previous_price, "Discount": discount, "Description": description}
 
 if __name__ == "__main__":
-    url = input("Enter product page URL: ").strip()
+    url = input("Enter Amazon product page URL: ").strip()
+
+    # Setup the web driver
     driver = setup_driver()
-    
+
     try:
         data = extract_product_data(url, driver)
-        save_data_to_csv(data)
-    finally:
-        driver.quit()
-
+        print(data)  # Print the extracted data to verify it works
+    except Exception as e:
+        logging.error(f"Error extracting data for {url}: {e}")
+    
+    driver.quit()
