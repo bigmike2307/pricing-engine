@@ -63,27 +63,49 @@ def fetch_page_content(url, driver):
 
 def extract_product_data(url, driver):
     soup, price_js = fetch_page_content(url, driver)
-    product_name = next((soup.select_one(selector).get_text(strip=True) for selector in ["span#productTitle", "h1", "h2.product-title", "h1.product_name", ".product-name", ".-fs20 -pts -pbxs"] if soup.select_one(selector)), "N/A")
+
+    product_name = next(
+        (soup.select_one(selector).get_text(strip=True) for selector in [
+            "span#productTitle", "h1", "h2.product-title", "h1.product_name", ".product-name", ".-fs20 -pts -pbxs"
+        ] if soup.select_one(selector)), "N/A"
+    )
+
     price = price_js if price_js else "N/A"
     if price == "N/A":
-        for selector in ["span.a-price-whole", "span.a-offscreen", "span.price", "p.price", "div.product-price", ".-b -ltr -tal -fs24", ".prc"]:
+        for selector in [
+            "span.a-price-whole", "span.a-offscreen", "span.price", "p.price",
+            "div.product-price", ".-b -ltr -tal -fs24", ".prc"
+        ]:
             price_element = soup.select_one(selector)
             if price_element:
                 raw_price = price_element.get_text(strip=True)
                 price = clean_price(raw_price)
                 break
-    slashed_price = next((clean_price(soup.select_one(selector).get_text(strip=True)) for selector in ["span.a-text-strike", "div.slashed-price", ".old-price", ".-tal -gy5 -l -fs16"] if soup.select_one(selector)), "N/A")
-    description = next((desc_element.get("content") if "meta" in selector else desc_element.get_text(strip=True) for selector in ["div#feature-bullets ul", "div.product-description", "p.description", "meta[name='description']"] if (desc_element := soup.select_one(selector))), "N/A")
+
+    slashed_price = next(
+        (clean_price(soup.select_one(selector).get_text(strip=True)) for selector in [
+            "span.a-text-strike", "div.slashed-price", ".old-price", ".-tal -gy5 -l -fs16"
+        ] if soup.select_one(selector)), "N/A"
+    )
+
+    description = next(
+        (desc_element.get("content") if "meta" in selector else desc_element.get_text(strip=True) for selector in [
+            "div#feature-bullets ul", "div.product-description", "p.description", "meta[name='description']"
+        ] if (desc_element := soup.select_one(selector))), "N/A"
+    )
+
     extracted_data = {
-        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "URL": url,
-        "Product Name": product_name,
-        "Current Price": price,
-        "Previous Price": slashed_price,
-        "Description": description
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "url": url,
+        "product_name": product_name,
+        "current_price": price,
+        "previous_price": slashed_price,
+        "description": description
     }
+
     logging.info(f"Extracted Data: {extracted_data}")
     return extracted_data
+
 
 def save_data_to_csv(data, filename="extracted_data.csv"):
     file_exists = False
