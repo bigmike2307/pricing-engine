@@ -8,5 +8,12 @@ class ScrapedDataSerializer(serializers.ModelSerializer):
         fields = [
              'user_identifier', 'url', 'product_name',
             'current_price', 'price_value', 'previous_price',
-            'discount', 'description', 'timestamp'
+            'discount', 'description', 'timestamp', 'id'
+        ]
+
+class ScrapedDataSerializerUpdate(serializers.ModelSerializer):
+    class Meta:
+        model = ScrapedData
+        fields = [
+              'current_price',
         ]

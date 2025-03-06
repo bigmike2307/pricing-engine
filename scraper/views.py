@@ -8,7 +8,7 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from scraper.models import ScrapedData
-from scraper.serializers import ScrapedDataSerializer
+from scraper.serializers import ScrapedDataSerializer, ScrapedDataSerializerUpdate
 from scrapy_scraper.spiders.price_checker import setup_driver, extract_product_data
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class ScrapeProductView(APIView):
         driver = setup_driver()
         try:
             product_data = extract_product_data(url, driver)
-            if not product_data.get('product_name') or not product_data.get('current_price'):
+            if not product_data.get('product_name', None) or not product_data.get('current_price', None):
                 logger.warning(f"Incomplete scraped data: {product_data}")
                 return Response(
                     {"error": "Incomplete data.", "scraped_data": product_data},
@@ -109,47 +109,7 @@ class UserScrapedDataView(APIView):
         serializer = ScrapedDataSerializer(scraped_data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    @swagger_auto_schema(
-        operation_description="Update a specific scraped product for a user_identifier using id (url and current_price excluded).",
-        request_body=ScrapedDataSerializer,
-        manual_parameters=[
-            openapi.Parameter(
-                'user_identifier',
-                openapi.IN_PATH,
-                description="Unique user identifier",
-                type=openapi.TYPE_STRING,
-                required=True
-            ),
-            openapi.Parameter(
-                'id',
-                openapi.IN_QUERY,
-                description="ID of the product to update",
-                type=openapi.TYPE_INTEGER,
-                required=True
-            ),
-        ],
-        responses={200: ScrapedDataSerializer()}
-    )
-    def put(self, request, user_identifier):
-        product_id = request.query_params.get('id')
-        if not product_id:
-            return Response({'error': 'id is required in query parameters.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            scraped_entry = ScrapedData.objects.get(user_identifier=user_identifier, id=product_id)
-        except ScrapedData.DoesNotExist:
-            return Response({'error': 'Scraped data not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        # Prevent url and current_price from being updated
-        update_data = request.data.copy()
-        update_data.pop('url', None)
-        update_data.pop('current_price', None)
-
-        serializer = ScrapedDataSerializer(scraped_entry, data=update_data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @swagger_auto_schema(
         operation_description="Delete a specific scraped product for a user_identifier using id.",
