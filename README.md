@@ -17,7 +17,7 @@ Pricing Engine is a Django-based web application designed to scrape and analyze 
 ### Clone the Repository
 ```sh
 git clone https://github.com/bigmike2307/pricing-engine.git
-
+cd pricing-engine
 ```
 
 ### Set Up Virtual Environment (For Local Development)
@@ -27,19 +27,7 @@ source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 pip install -r requirements.txt
 ```
 
-[//]: # (### Environment Variables)
 
-[//]: # (Create a `.env` file and configure the required environment variables:)
-
-[//]: # (```)
-
-[//]: # (DJANGO_SECRET_KEY=your_secret_key)
-
-[//]: # (DEBUG=True)
-
-[//]: # (DATABASE_URL=sqlite:///db.sqlite3  # Change this for production)
-
-[//]: # (```)
 
 ### Run Migrations
 ```sh
@@ -58,18 +46,47 @@ docker-compose up --build
 ```
 
 ## API Endpoints
-### Base URL
-```
-http://localhost:8000/api/
-```
+
 
 ### Available Endpoints
-| Method | Endpoint                              | Description                     |
-|--------|--------------------------------------|---------------------------------|
-| POST   | `/api/scrape-product/`               | Scrape product data            |
-| GET    | `/api/scraped-data/<user_identifier>/` | Fetch user's scraped data      |
-| GET    | `/swagger/`                          | API documentation (Swagger)    |
-| GET    | `/redoc/`                            | API documentation (Redoc)      |
+| Method | Endpoint                              | Description                         |
+|--------|--------------------------------------|-------------------------------------|
+| POST   | `/scrape-product/`                  | Scrape product data                |
+| GET    | `/scraped-data/<user_identifier>/`  | Get scraped data for a user        |
+| PUT    | `/scraped-data/<user_identifier>/?id=<product_id>` | Update scraped data (excluding URL & price) |
+| GET    | `/swagger/`                         | API documentation (Swagger)        |
+| GET    | `/redoc/`                           | API documentation (Redoc)          |
+
+### Using Endpoints
+#### Scrape a Product
+**Endpoint:**
+```
+POST /scrape-product/
+```
+**Request Body (JSON):**
+```json
+{
+    "user_identifier": "string",
+    "url": "string",
+    "save": true
+}
+```
+
+**Response:**
+```json
+[
+    {
+        "id": 1,
+        "product_name": "Sample Product",
+        "current_price": "$99.99",
+        "previous_price": "$129.99",
+        "description": "A high-quality product",
+        "timestamp": "2024-03-05 12:00:00"
+    }
+]
+```
+
+
 
 
 
@@ -79,6 +96,4 @@ http://localhost:8000/api/
 3. Make your changes and commit them
 4. Push to your fork and submit a pull request
 
-## License
-This project is licensed under the MIT License.
 
