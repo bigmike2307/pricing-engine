@@ -17,7 +17,7 @@ Pricing Engine is a Django-based web application designed to scrape and analyze 
 ### Clone the Repository
 ```sh
 git clone https://github.com/bigmike2307/pricing-engine.git
-cd pricing-engine
+
 ```
 
 ### Set Up Virtual Environment (For Local Development)
