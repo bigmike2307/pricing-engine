@@ -1,0 +1,12 @@
+version: "3.8"
+services:
+  web:
+    env_file: .env.dev
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+
+  mysql:
+    profiles:
+      - do-not-start  # This prevents MySQL from running in development
