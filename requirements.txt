@@ -8,3 +8,6 @@ beautifulsoup4~=4.13.3
 webdriver-manager~=4.0.2
 Scrapy~=2.12.0
 itemadapter~=0.11.0
+python-dotenv
+mysql-connector-python
+
