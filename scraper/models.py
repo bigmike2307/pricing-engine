@@ -10,6 +10,7 @@ class ScrapedData(models.Model):
     price_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # New field
     previous_price = models.CharField(max_length=50, null=True, blank=True)
     discount = models.CharField(max_length=20, null=True, blank=True)
+    is_active = models.BooleanField(default=False)
     description = models.TextField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     update_frequency = models.IntegerField(default=6, help_text="Update interval in hours")
