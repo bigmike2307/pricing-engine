@@ -1,8 +1,4 @@
 
-
-
-
-
 # Use a lightweight Python base image
 FROM python:3.12
 

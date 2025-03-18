@@ -46,6 +46,8 @@ python manage.py runserver
 
 ### Run Docker for Development (Without MySQL)
 ```sh
+docker compose build --no-cache 
+
 docker compose up web
 ```
 ✅ Runs **without MySQL**  
@@ -53,6 +55,8 @@ docker compose up web
 
 ### Run Docker for Production (With MySQL)
 ```sh
+docker compose build --no-cache 
+
 docker compose up -d --build
 ```
 ✅ Runs **with MySQL**  
@@ -71,8 +75,6 @@ docker compose down
 | Method | Endpoint                              | Description                         |
 |--------|--------------------------------------|-------------------------------------|
 | POST   | `/scrape-product/`                  | Scrape product data                |
-| GET    | `/scraped-data/<user_identifier>/`  | Get scraped data for a user        |
-| PUT    | `/scraped-data/<user_identifier>/?id=<product_id>` | Update scraped data (excluding URL & price) |
 | GET    | `/swagger/`                         | API documentation (Swagger)        |
 | GET    | `/redoc/`                           | API documentation (Redoc)          |
 
