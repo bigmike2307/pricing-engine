@@ -3,16 +3,50 @@ version: "3.8"
 services:
   web:
     build: .
+    container_name: django_app
     env_file:
       - .env
     ports:
       - "8000:8000"
     depends_on:
       - db
+      - redis
 
   db:
-    image: mysql:8.0
-    env_file:
-      - .env
-    ports:
-      - "3306:3306"
+    image: mysql:5.7
+    environment:
+        MYSQL_DATABASE: 'django-app-db'
+        MYSQL_ALLOW_EMPTY_PASSWORD: 'true'
+    volumes:
+        - ./data/mysql/db:/var/lib/mysql
+
+#  redis:
+#    image: redis:alpine
+#    container_name: redis
+#    restart: always
+#    ports:
+#      - "6379:6379"
+#
+#  celery:
+#    build: .
+#    container_name: celery_worker
+#    command: celery -A your_project worker --loglevel=info
+#    depends_on:
+#      - redis
+#      - db
+#    env_file:
+#      - .env
+#
+#  celery-beat:
+#    build: .
+#    container_name: celery_beat
+#    command: celery -A your_project beat --loglevel=info
+#    depends_on:
+#      - redis
+#      - db
+#      - celery
+#    env_file:
+#      - .env
+
+#volumes:
+#  mysql_data:

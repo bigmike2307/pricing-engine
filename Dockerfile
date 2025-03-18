@@ -1,14 +1,10 @@
-# Use a lightweight Python image
-FROM python:3.12-slim
 
-# Set non-interactive mode
-ENV DEBIAN_FRONTEND=noninteractive
 
 
 
 
 # Use a lightweight Python base image
-FROM python:3.12-slim
+FROM python:3.12
 
 # Set environment variables to prevent Python from writing .pyc files
 ENV PYTHONUNBUFFERED=1 \
@@ -16,6 +12,8 @@ ENV PYTHONUNBUFFERED=1 \
     CHROME_BIN=/usr/bin/google-chrome \
     CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
+# Set non-interactive mode
+ENV DEBIAN_FRONTEND=noninteractive
 # Set working directory
 WORKDIR /app
 
@@ -42,8 +40,12 @@ RUN wget -q "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261
     unzip /tmp/chromedriver.zip -d /usr/bin/ && \
     mv /usr/bin/chromedriver-linux64/chromedriver /usr/bin/chromedriver && \
     chmod +x /usr/bin/chromedriver && \
-    rm -rf /tmp/chromedriver.zip /usr/bin/chromedriver-linux64
+    rm -rf /tmp/chromedriver.zip /usr/bin/chromedriver-linux64 \
 
+RUN apt-get update && apt-get install -y \
+    default-libmysqlclient-dev \
+    build-essential \
+    pkg-config
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

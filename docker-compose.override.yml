@@ -1,4 +1,5 @@
 version: "3.8"
+
 services:
   web:
     env_file: .env.dev
@@ -6,7 +7,31 @@ services:
       - .:/app
     ports:
       - "8000:8000"
+    depends_on:
+      - redis  # Web does not depend on Celery
 
-  mysql:
-    profiles:
-      - do-not-start  # This prevents MySQL from running in development
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  celery:
+    build: .
+    container_name: celery_worker
+    command: celery -A your_project worker --loglevel=info
+    depends_on:
+      - redis  # Removed web dependency
+    env_file:
+      - .env.dev
+
+  celery-beat:
+    build: .
+    container_name: celery_beat
+    command: celery -A your_project beat --loglevel=info
+    depends_on:
+      - redis
+      - celery  # Removed web dependency
+    env_file:
+      - .env.dev
