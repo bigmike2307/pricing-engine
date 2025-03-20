@@ -29,8 +29,8 @@ else:
 # Secret Key
 SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "False") == "True"
-
+# DEBUG = os.getenv("DEBUG", "False") == "True"
+DEBUG=True
 ALLOWED_HOSTS = ['*']
 
 
@@ -86,25 +86,48 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 # Database Configuration
-if os.getenv("DJANGO_ENV") == "production":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.mysql",
-            "NAME": os.getenv("DB_NAME"),
-            "USER": os.getenv("DB_USER"),
-            "PASSWORD": os.getenv("DB_PASSWORD"),
-            "HOST": os.getenv("DB_HOST"),
-            "PORT": os.getenv("DB_PORT"),
-        }
-    }
-else:  # Default to SQLite for development
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.mysql",
+#         "NAME": "defaultdb",
+#         "USER": "avnadmin",
+#         "PASSWORD": "AVNS_fPiK40ORrag5QgT0D-i",
+#         "HOST": "mysql-28037cf7-chukwujidan-27b7.j.aivencloud.com",
+#         "PORT": "10781",
+#     }
+# }
 
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'django-app-db',
+        'USER': 'root',
+        'PASSWORD': '',
+        'HOST': 'db',
+        'PORT': '3306',
+    }
+}
+
+
+# if os.getenv("DJANGO_ENV") == "production":
+#     DATABASES = {
+#         "default": {
+#             "ENGINE": "django.db.backends.mysql",
+#             "NAME": os.getenv("DB_NAME"),
+#             "USER": os.getenv("DB_USER"),
+#             "PASSWORD": os.getenv("DB_PASSWORD"),
+#             "HOST": os.getenv("DB_HOST"),
+#             "PORT": os.getenv("DB_PORT"),
+#         }
+#     }
+# else:  # Default to SQLite for development
+#     DATABASES = {
+#         "default": {
+#             "ENGINE": "django.db.backends.sqlite3",
+#             "NAME": BASE_DIR / "db.sqlite3",
+#         }
+#     }
+#
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -167,8 +190,8 @@ CELERY_TASK_SERIALIZER = 'json'
 
 
 
-STATIC_URL = '/static/'
+#STATIC_URL = '/static/'
 # STATICFILES_DIRS = [
 #     os.path.join(BASE_DIR, "static"),
 # ]
-# STATIC_ROOT = os.path.join(BASE_DIR, "static")
+#STATIC_ROOT = os.path.join(BASE_DIR, "static")

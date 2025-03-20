@@ -11,41 +11,30 @@ services:
     depends_on:
       - db
 
+  celery:
+    build: .
+    command: celery -A core worker -l INFO
+    volumes:
+      - .:/usr/src/app
+    env_file:
+      - .env
+    depends_on:
+      - web
+      - redis
 
   db:
     image: mysql:8.0
-    env_file:
-      - .env
+    environment:
+      MYSQL_DATABASE: 'django-app-db'
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'true'
     volumes:
-        - ./data/mysql/db:/var/lib/mysql
+      - ./data/mysql/db:/var/lib/mysql
+    restart: always
+    ports:
+      - "3306:3306"
 
-#  redis:
-#    image: redis:alpine
-#    container_name: redis
-#    restart: always
-#    ports:
-#      - "6379:6379"
-#
-#  celery:
-#    build: .
-#    container_name: celery_worker
-#    command: celery -A your_project worker --loglevel=info
-#    depends_on:
-#      - redis
-#      - db
-#    env_file:
-#      - .env
-#
-#  celery-beat:
-#    build: .
-#    container_name: celery_beat
-#    command: celery -A your_project beat --loglevel=info
-#    depends_on:
-#      - redis
-#      - db
-#      - celery
-#    env_file:
-#      - .env
+  redis:
+    image: "redis:alpine"
 
 #volumes:
 #  mysql_data:
