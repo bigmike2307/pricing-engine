@@ -26,12 +26,12 @@ RUN apt-get update && \
     libx11-xcb1 \
     && rm -rf /var/lib/apt/lists/*
 
-#Install Google Chrome
+# Install Google Chrome
 RUN wget -q "https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" -O /tmp/chrome.deb && \
     apt-get update && apt-get install -y /tmp/chrome.deb && \
     rm /tmp/chrome.deb
-
-# Install ChromeDriver (explicit version to match Chrome)
+#
+## Install ChromeDriver (explicit version to match Chrome)
 RUN wget -q "https://storage.googleapis.com/chrome-for-testing-public/122.0.6261.94/linux64/chromedriver-linux64.zip" -O /tmp/chromedriver.zip && \
     unzip /tmp/chromedriver.zip -d /usr/bin/ && \
     mv /usr/bin/chromedriver-linux64/chromedriver /usr/bin/chromedriver && \
@@ -43,9 +43,10 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     pkg-config
 
+# Copy and install Python dependencies first (cache optimization)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 # Copy your project files

@@ -175,3 +175,7 @@ cython_debug/
 #.idea/
 
 /data/
+!/data/
+!/.mysql_data/
+!/data/
+!/.mysql_data/
