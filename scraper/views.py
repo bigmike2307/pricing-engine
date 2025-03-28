@@ -1,3 +1,5 @@
+from celery.result import AsyncResult
+from django.urls import reverse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -90,7 +92,7 @@ class SaveAndAutomateProductView(APIView):
                 "url": openapi.Schema(type=openapi.TYPE_STRING, description="Product URL"),
                 "update_frequency": openapi.Schema(
                     type=openapi.TYPE_STRING,
-                    description="Update frequency (minutes, hourly, daily, monthly)",
+                    description="Update frequency (minutes, hourly, daily, weekly, monthly)",
                     default="hourly"
                 ),
             },
@@ -113,7 +115,7 @@ class SaveAndAutomateProductView(APIView):
                 return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
 
             # Validate update frequency
-            valid_frequencies = ["minutes", "hourly", "daily", "monthly"]
+            valid_frequencies = ["minutes", "hourly", "daily", "weekly", "monthly"]
             if update_frequency not in valid_frequencies:
                 return Response(
                     {"error": f"Invalid update frequency. Choose from {valid_frequencies}."},
@@ -151,14 +153,8 @@ class SaveAndAutomateProductView(APIView):
                 update_frequency=str(update_frequency),   # Ensure only valid string values are stored
             )
 
-            # Map frequency to Celery Beat interval
-            frequency_map = {
-                "minutes": 5,  # Every 5 minutes
-                "hourly": 60,  # Every 1 hour
-                "daily": 1440,  # Every 24 hours
-                "monthly": 43200,  # Every 30 days
-            }
-            schedule_product_update(scraped_entry.id, frequency_map[update_frequency]) # Default to 60 minutes if invalid
+
+            schedule_product_update(scraped_entry.id, update_frequency) # Default to 60 minutes if invalid
 
               # Pass integer here, not save it to model
 
@@ -177,3 +173,121 @@ class SaveAndAutomateProductView(APIView):
                 {"error": "An unexpected error occurred.", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from scraper.models import ScrapedData
+from scraper.serializers import ScrapedDataSerializer
+import logging
+from scraper.task import schedule_product_update, update_scraped_data
+
+logger = logging.getLogger(__name__)
+
+class ListSavedProductsView(APIView):
+    """
+    List all saved products for a given user.
+    """
+    @swagger_auto_schema(
+        operation_summary="List all saved products",
+        operation_description="Retrieve all products a user has saved.",
+        manual_parameters=[
+            openapi.Parameter('user_identifier', openapi.IN_QUERY, description="Unique user ID", type=openapi.TYPE_STRING, required=True)
+        ],
+        responses={200: ScrapedDataSerializer(many=True)}
+    )
+    def get(self, request):
+        user_identifier = request.query_params.get('user_identifier')
+        if not user_identifier:
+            return Response({"error": "user_identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
+        products = ScrapedData.objects.filter(user_identifier=user_identifier)
+        serializer = ScrapedDataSerializer(products, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class RetrieveScrapedProductView(APIView):
+    """
+    Retrieve a specific product by ID for a given user.
+    """
+    @swagger_auto_schema(
+        operation_summary="Retrieve a specific scraped product",
+        operation_description="Get details of a single scraped product by ID.",
+        manual_parameters=[
+            openapi.Parameter('user_identifier', openapi.IN_QUERY, description="Unique user ID", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('product_id', openapi.IN_PATH, description="Product ID", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        responses={200: ScrapedDataSerializer()}
+    )
+    def get(self, request, product_id):
+        user_identifier = request.query_params.get('user_identifier')
+        if not user_identifier:
+            return Response({"error": "user_identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            product = ScrapedData.objects.get(id=product_id, user_identifier=user_identifier)
+            return Response(ScrapedDataSerializer(product).data, status=status.HTTP_200_OK)
+        except ScrapedData.DoesNotExist:
+            return Response({"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+class DeleteScrapedProductView(APIView):
+    """
+    Delete a saved product for a given user.
+    """
+    @swagger_auto_schema(
+        operation_summary="Delete a scraped product",
+        operation_description="Remove a saved product.",
+        manual_parameters=[
+            openapi.Parameter('user_identifier', openapi.IN_QUERY, description="Unique user ID", type=openapi.TYPE_STRING, required=True),
+            openapi.Parameter('product_id', openapi.IN_PATH, description="Product ID", type=openapi.TYPE_INTEGER, required=True)
+        ],
+        responses={204: "Product deleted successfully."}
+    )
+    def delete(self, request, product_id):
+        user_identifier = request.query_params.get('user_identifier')
+        if not user_identifier:
+            return Response({"error": "user_identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            product = ScrapedData.objects.get(id=product_id, user_identifier=user_identifier)
+            product.delete()
+            return Response({"message": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+        except ScrapedData.DoesNotExist:
+            return Response({"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+class UpdateScrapeSettingsView(APIView):
+    """
+    Update scrape settings (update frequency) for a saved product.
+    """
+    @swagger_auto_schema(
+        operation_summary="Update scrape settings",
+        operation_description="Modify update frequency for an existing product.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "user_identifier": openapi.Schema(type=openapi.TYPE_STRING, description="Unique user ID"),
+                "update_frequency": openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description="Update frequency (minutes, hourly, daily, weekly, monthly)",
+                    default="hourly"
+                )
+            },
+            required=["user_identifier", "update_frequency"]
+        ),
+        responses={200: "Update successful."}
+    )
+    def patch(self, request, product_id):
+        user_identifier = request.data.get('user_identifier')
+        update_frequency = request.data.get('update_frequency')
+        if not user_identifier or not update_frequency:
+            return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            product = ScrapedData.objects.get(id=product_id, user_identifier=user_identifier)
+            product.update_frequency = update_frequency
+            product.save()
+            schedule_product_update(product.id, update_frequency)
+            return Response({"message": "Update frequency updated successfully."}, status=status.HTTP_200_OK)
+        except ScrapedData.DoesNotExist:
+            return Response({"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
+

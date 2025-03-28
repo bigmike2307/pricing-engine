@@ -1,6 +1,10 @@
 DJANGO_ENV=production
-DB_NAME=your_production_db
-DB_USER=your_user
-DB_PASSWORD=your_password
-DB_HOST=your_external_mysql_host
+DB_NAME=DB_NAME
+DB_USER=USERNAME
+DB_PASSWORD=PASSWORD
+DB_HOST=HOST
 DB_PORT=3306
+
+# Redis & Celery settings
+CELERY_BROKER_URL=redis://redis:6379/0
+CELERY_RESULT_BACKEND=redis://redis:6379/0

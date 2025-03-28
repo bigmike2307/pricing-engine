@@ -1,21 +1,23 @@
 import os
 from pathlib import Path
+from decouple import config
 from dotenv import load_dotenv
 
-# Base directory of the project
+# Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables
+# Load environment variables based on the environment
 ENV_PATH = BASE_DIR / ".env"
+
 if os.getenv("DJANGO_ENV") == "development":
-    load_dotenv(BASE_DIR / ".env.dev")  # Load local env for dev
+    load_dotenv(BASE_DIR / ".env.dev")  # Load local env for development
 else:
     load_dotenv(ENV_PATH)  # Load production env
 
 # 🚀 Security Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key")
-DEBUG = os.getenv("DEBUG", "False") == "True"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+SECRET_KEY = config("SECRET_KEY", default="fallback-secret-key")
+DEBUG = config("DEBUG", default="False") == "True"
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="*").split(",")
 
 # 🌍 Application Definition
 INSTALLED_APPS = [
@@ -29,12 +31,15 @@ INSTALLED_APPS = [
     "drf_yasg",
     'django_filters',
     'django_celery_beat',
+    'django_celery_results',
+    'corsheaders',  # CORS middleware
     'scraper',  # Custom App
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # CORS Middleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -63,24 +68,27 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 
 # 🗄️ Database Configuration
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST"),
-        "PORT": os.getenv("DB_PORT", "3306"),
-        "OPTIONS": {
-            "charset": "utf8mb4",
-        },
+if os.getenv("DJANGO_ENV") == "development":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
-
-# Allow external MySQL in production
-if os.getenv("DJANGO_ENV") == "production":
-    DATABASES["default"]["HOST"] = os.getenv("DB_HOST")  # Use external MySQL host
-
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.mysql",
+            "NAME": config("DB_NAME"),
+            "USER": config("DB_USER"),
+            "PASSWORD": config("DB_PASSWORD"),
+            "HOST": config("DB_HOST"),
+            "PORT": config("DB_PORT", default="3306"),
+            "OPTIONS": {
+                "charset": "utf8mb4",
+            },
+        }
+    }
 
 # 🔐 Password Validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -98,8 +106,8 @@ USE_TZ = True
 
 # 🖼️ Static & Media Files
 STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"]
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles/')
+STATICFILES_DIRS = [os.path.join(BASE_DIR, "static")]
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -116,8 +124,8 @@ REST_FRAMEWORK = {
 }
 
 # ⚡ Celery Configuration
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
+CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://redis:6379/0")
+CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = "UTC"
@@ -126,3 +134,26 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers.DatabaseScheduler"
 
 # 🚀 Default Primary Key
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ✅ CORS Configuration
+CORS_ALLOW_ALL_ORIGINS = config("CORS_ALLOW_ALL_ORIGINS", default="False") == "True"
+CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="").split(",")
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="").split(",")
+
+CORS_ALLOW_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "apoloappauth",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+# Print debug info
+print("Allowed Hosts:", ALLOWED_HOSTS)
+print("Environment:", os.getenv("DJANGO_ENV"))

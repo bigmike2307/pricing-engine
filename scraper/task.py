@@ -1,12 +1,15 @@
-import json
+
 import logging
+from datetime import datetime, timedelta
+import json
+import pytz
 from celery import shared_task
 from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
 from scraper.models import ScrapedData
 from scrapy_scraper.spiders.price_checker import setup_driver, extract_product_data
 
 logger = logging.getLogger(__name__)
-
+  # Limits to 10 tasks per minute per worker
 @shared_task
 def update_scraped_data(product_id):
     """Task to scrape and update product price at set intervals"""
@@ -42,12 +45,33 @@ def schedule_product_update(product_id, frequency):
 
         task_name = f"update_product_{product_id}"
 
-        if frequency == "monthly":
-            # Handle Monthly Schedule using Crontab
+        if frequency == "weekly":
+            # Get the current time in UTC
+            now = datetime.utcnow().replace(tzinfo=pytz.utc)
+            start_time = now + timedelta(weeks=1)  # Start exactly a week from now
+
+            schedule, _ = IntervalSchedule.objects.get_or_create(every=7, period=IntervalSchedule.DAYS)
+            existing_task = PeriodicTask.objects.filter(name=task_name).first()
+
+            if existing_task:
+                existing_task.interval = schedule
+                existing_task.start_time = start_time
+                existing_task.save()
+                logger.info(f"Updated existing weekly task: {task_name} to start on {start_time}")
+            else:
+                PeriodicTask.objects.create(
+                    interval=schedule,
+                    name=task_name,
+                    task="scraper.task.update_scraped_data",
+                    args=json.dumps([product_id]),
+                    start_time=start_time,  # Schedule to run one week from now
+                )
+                logger.info(f"Scheduled new weekly task: {task_name}, first run at {start_time}")
+
+        elif frequency == "monthly":
             cron_schedule, _ = CrontabSchedule.objects.get_or_create(
                 minute="0", hour="0", day_of_month="1", month_of_year="*", day_of_week="*"
             )
-
             existing_task = PeriodicTask.objects.filter(name=task_name).first()
             if existing_task:
                 existing_task.crontab = cron_schedule
@@ -57,20 +81,18 @@ def schedule_product_update(product_id, frequency):
                 PeriodicTask.objects.create(
                     crontab=cron_schedule,
                     name=task_name,
-                    task="scraper.tasks.update_scraped_data",
+                    task="scraper.task.update_scraped_data",
                     args=json.dumps([product_id]),
                 )
                 logger.info(f"Scheduled new monthly task: {task_name}")
 
         else:
-            # Handle Minutes, Hourly, and Daily Scheduling
             interval_period = PERIODS.get(frequency)
             if not interval_period:
                 logger.error(f"Invalid frequency: {frequency}")
                 return "Invalid frequency"
 
             schedule, _ = IntervalSchedule.objects.get_or_create(every=1, period=interval_period)
-
             existing_task = PeriodicTask.objects.filter(name=task_name).first()
             if existing_task:
                 existing_task.interval = schedule
@@ -80,7 +102,7 @@ def schedule_product_update(product_id, frequency):
                 PeriodicTask.objects.create(
                     interval=schedule,
                     name=task_name,
-                    task="scraper.tasks.update_scraped_data",
+                    task="scraper.task.update_scraped_data",
                     args=json.dumps([product_id]),
                 )
                 logger.info(f"Scheduled new periodic task: {task_name}")

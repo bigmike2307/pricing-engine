@@ -13,8 +13,10 @@ services:
       - .:/app
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+#    env_file:
+#      - .env
+    environment:
+      - DJANGO_ENV=development
     depends_on:
       - redis
     healthcheck:
@@ -38,8 +40,7 @@ services:
     depends_on:
       django:
         condition: service_healthy
-    env_file:
-      - .env
+
 
   celery-beat:
     build: .
@@ -53,5 +54,4 @@ services:
         condition: service_healthy
       celery:
         condition: service_started
-    env_file:
-      - .env
+

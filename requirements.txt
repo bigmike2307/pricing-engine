@@ -13,4 +13,8 @@ Scrapy~=2.12.0
 itemadapter~=0.11.0
 mysqlclient
 redis
+django-cors-headers
 psycopg2-binary>=2.8
+python-decouple==3.8
+django-celery-results
+pytz~=2025.1
