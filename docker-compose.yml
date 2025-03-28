@@ -16,7 +16,7 @@ services:
 #    env_file:
 #      - .env
     environment:
-      - DJANGO_ENV=development
+      - DJANGO_ENV=production
     depends_on:
       - redis
     healthcheck:
