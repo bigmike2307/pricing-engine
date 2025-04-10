@@ -48,7 +48,6 @@ class PreviewScrapeProductView(APIView):
             )
 
         driver = setup_driver()
-
         try:
             product_data = extract_product_data(url, driver)
 
@@ -76,7 +75,10 @@ class PreviewScrapeProductView(APIView):
             )
 
         finally:
-            driver.quit()
+            try:
+                driver.quit()
+            except Exception as e:
+                logger.warning(f"Driver quit failed: {e}")
 
 
 class SaveAndAutomateProductView(APIView):
