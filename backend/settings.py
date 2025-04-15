@@ -157,3 +157,4 @@ CORS_ALLOW_HEADERS = [
 # Print debug info
 # print("Allowed Hosts:", ALLOWED_HOSTS)
 # print("Environment:", os.getenv("DJANGO_ENV"))
+# test
