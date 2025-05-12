@@ -1,295 +1,437 @@
-from celery.result import AsyncResult
-from django.urls import reverse
+from scrapy_scraper.spiders.price_checker import setup_driver, extract_product_data
+from .serializers import PriceRecommendationSerializer, ScrapedDataSerializer, CompetitorSerializer, ProductSerializer, \
+    TenantSerializer, CompetitorProductSerializer
+from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import serializers
+from .models import Tenant, Product, Competitor, ScrapedData, PriceRecommendation, CompetitorProduct
+from rest_framework import permissions
+from drf_yasg.utils import swagger_auto_schema
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
-from scraper.models import ScrapedData
-from scraper.serializers import ScrapedDataSerializer
+from .utils import recommend_optimal_price
 
-import logging
 
-from scraper.task import schedule_product_update, update_scraped_data
-from scrapy_scraper.spiders.price_checker import setup_driver, extract_product_data
+# Company Views
+class CompanyListCreate(APIView):
+    #permission_classes = [permissions.IsAuthenticated]
 
-logger = logging.getLogger(__name__)
-
-class PreviewScrapeProductView(APIView):
-    """
-    Scrapes product details and returns a preview. Requires `user_identifier` and `url`.
-    """
+    @swagger_auto_schema(operation_description="List all companies or create a new company")
+    def get(self, request):
+        companies = Tenant.objects.all()
+        serializer = TenantSerializer(companies, many=True)
+        return Response(serializer.data)
 
     @swagger_auto_schema(
-        operation_summary="Preview a product scrape",
-        operation_description="Scrape product details from a given URL without saving them.",
+        operation_description="Create a new company",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
-                "user_identifier": openapi.Schema(type=openapi.TYPE_STRING, description="Unique user ID"),
-                "url": openapi.Schema(type=openapi.TYPE_STRING, description="Product URL to scrape"),
+                "user_identifier": openapi.Schema(type=openapi.TYPE_STRING, description="User_identifier"),
+                "email": openapi.Schema(type=openapi.TYPE_STRING, description="Company email address"),
             },
-            required=["user_identifier", "url"],
+            required=["user_identifier",  "email"],
         ),
         responses={
-            200: openapi.Response("Scraping successful"),
-            400: openapi.Response("Invalid request"),
-            500: openapi.Response("Scraping failed"),
+            201: openapi.Response("Company created successfully."),
+            400: openapi.Response("Invalid data provided."),
         },
     )
     def post(self, request):
-        user_identifier = request.data.get('user_identifier')
-        url = request.data.get('url')
+        """
+        Creates a new company and returns the created company data.
+        """
+        serializer = TenantSerializer(data=request.data)
 
-        if not user_identifier or not url:
-            return Response(
-                {"error": "user_identifier and url are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if serializer.is_valid():
+            # Save the new company to the database
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        # If the provided data is invalid, return a 400 error with validation errors
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CompanyDetail(APIView):
+    #permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="Retrieve a company by ID")
+    def get(self, request, id):
+        try:
+            company = Tenant.objects.get(id=id)
+        except Tenant.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = TenantSerializer(company)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(operation_description="Update a company by ID", request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "user_identifier": openapi.Schema(type=openapi.TYPE_STRING, description="User_identifier"),
+                "email": openapi.Schema(type=openapi.TYPE_STRING, description="Company email address"),
+            },
+            required=["user_identifier",  "email"],
+        ),)
+    def put(self, request, id):
+        try:
+            company = Tenant.objects.get(id=id)
+        except Tenant.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = TenantSerializer(company, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(operation_description="Delete a company by ID")
+    def delete(self, request, id):
+        try:
+            company = Tenant.objects.get(id=id)
+            company.delete()
+        except Tenant.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# Product Views
+class ProductListCreate(APIView):
+    #permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="List all products or create a new product", )
+    def get(self, request):
+        products = Product.objects.all()
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(
+    operation_summary="Create a new product",
+    operation_description="Create a new product under a specific tenant with pricing strategy.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            "tenant": openapi.Schema(type=openapi.TYPE_INTEGER, description="Tenant ID"),
+            "name": openapi.Schema(type=openapi.TYPE_STRING, description="Product Name"),
+            "description": openapi.Schema(type=openapi.TYPE_STRING, description="Product description"),
+            "cost_price": openapi.Schema(type=openapi.TYPE_NUMBER, format="decimal", description="Cost price of the product"),
+            "target_margin": openapi.Schema(type=openapi.TYPE_NUMBER, format="decimal", description="Target profit margin percentage"),
+        },
+        required=["tenant", "name", "description", "cost_price", "target_margin"],
+    )
+        )
+    def post(self, request):
+        serializer = ProductSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ProductDetail(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="Retrieve a product by ID")
+    def get(self, request, id):
+        try:
+            product = Product.objects.get(id=id)
+        except Product.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = ProductSerializer(product)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(operation_description="Update a product by ID")
+    def put(self, request, id):
+        try:
+            product = Product.objects.get(id=id)
+        except Product.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = ProductSerializer(product, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(operation_description="Delete a product by ID")
+    def delete(self, request, id):
+        try:
+            product = Product.objects.get(id=id)
+            product.delete()
+        except Product.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ProductRecommendation(APIView):
+    #permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Trigger recommendation for a product",
+        responses={201: PriceRecommendationSerializer()}
+    )
+    def post(self, request, id):
+        try:
+            product = Product.objects.get(id=id)
+        except Product.DoesNotExist:
+            return Response({"detail": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        cost_price = product.cost_price
+        margin = product.target_margin
+
+        # Get competitor prices for this product
+        competitor_qs = CompetitorProduct.objects.filter(product=product, price_value__isnull=False)
+        competitor_prices = list(competitor_qs.values_list("price_value", flat=True))
+
+        # Apply recommendation logic
+        recommended_price, reason = recommend_optimal_price(cost_price, margin, competitor_prices)
+
+        # Save the recommendation
+        recommendation = PriceRecommendation.objects.create(
+            product=product,
+            recommended_price=recommended_price,
+            #reason=reason,
+            competitor_data_used={
+                "prices": [float(p) for p in competitor_prices],  # Convert Decimal to float
+                "sources": [cp.competitor.name for cp in competitor_qs],
+            },
+        )
+
+        return Response(PriceRecommendationSerializer(recommendation).data, status=status.HTTP_201_CREATED)
+
+# Competitor Views
+class CompetitorListCreate(APIView):
+    #permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="List or add a competitor")
+    def get(self, request):
+        competitors = Competitor.objects.all()
+        serializer = CompetitorSerializer(competitors, many=True)
+        return Response(serializer.data)
+
+    @swagger_auto_schema(
+    operation_summary="Add a new competitor",
+    operation_description="Create a new competitor associated with a tenant for price monitoring.",
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            "tenant": openapi.Schema(type=openapi.TYPE_INTEGER, description="Tenant ID the competitor belongs to"),
+            "name": openapi.Schema(type=openapi.TYPE_STRING, description="Name of the competitor (e.g., 'Amazon')"),
+            "url": openapi.Schema(type=openapi.TYPE_STRING, format="url", description="Unique URL to scrape or pull pricing data from"),
+        },
+        required=["tenant", "name", "url"]
+    )
+)
+    def post(self, request):
+        serializer = CompetitorSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CompetitorDetail(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="Retrieve/update/delete a competitor by ID")
+    def get(self, request, id):
+        try:
+            competitor = Competitor.objects.get(id=id)
+        except Competitor.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = CompetitorSerializer(competitor)
+        return Response(serializer.data)
+
+    def put(self, request, id):
+        try:
+            competitor = Competitor.objects.get(id=id)
+        except Competitor.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = CompetitorSerializer(competitor, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, id):
+        try:
+            competitor = Competitor.objects.get(id=id)
+            competitor.delete()
+        except Competitor.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+
+class CompetitorProductListView(APIView):
+    queryset = CompetitorProduct.objects.all()
+    serializer_class = CompetitorProductSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="List all competitor products")
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class ScrapeAndCreateCompetitorProduct(APIView):
+    # permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Scrape competitor product and optionally save.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["product", "competitor", "product_url"],
+            properties={
+                "product": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "competitor": openapi.Schema(type=openapi.TYPE_INTEGER),
+                "product_url": openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_URI),
+                "save": openapi.Schema(type=openapi.TYPE_BOOLEAN, default=False)
+            },
+        ),
+        responses={201: CompetitorProductSerializer()}
+    )
+    def post(self, request):
+        product_id = request.data.get("product")
+        competitor_id = request.data.get("competitor")
+        url = request.data.get("product_url")
+        save = request.data.get("save", False)
+
+        if not (product_id and competitor_id and url):
+            return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
 
         driver = setup_driver()
         try:
-            product_data = extract_product_data(url, driver)
-
-            if not product_data.get('product_name') or not product_data.get('current_price'):
-                logger.warning(f"Incomplete scraped data: {product_data}")
+            scraped = extract_product_data(url, driver)
+            if not scraped.get("product_name") or not scraped.get("current_price"):
                 return Response(
-                    {"error": "Incomplete data.", "scraped_data": product_data},
+                    {"error": "Incomplete data.", "scraped_data": scraped},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-
-            return Response(
-                {
-                    "message": "Scraping successful.",
-                    "user_identifier": user_identifier,
-                    "scraped_data": product_data
-                },
-                status=status.HTTP_200_OK
-            )
-
         except Exception as e:
-            logger.error(f"Error during scraping: {str(e)}")
-            return Response(
-                {"error": "Failed to scrape product.", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
+            return Response({"error": "Scraping failed", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         finally:
-            try:
-                driver.quit()
-            except Exception as e:
-                logger.warning(f"Driver quit failed: {e}")
+            driver.quit()
+
+        data = {
+            "product": product_id,
+            "competitor": competitor_id,
+            "product_url": url,
+            "current_price": scraped.get("current_price"),
+            "previous_price": scraped.get("previous_price", ""),
+        }
+
+        serializer = CompetitorProductSerializer(data=data)
+        if serializer.is_valid():
+            if save:
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response({"scraped_data": serializer.data, "message": "Not saved. Use save=true to persist."})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class SaveAndAutomateProductView(APIView):
-    """ Saves the scraped data and starts a background task for updates. """
+class CompetitorProductDetailView(APIView):
+    #permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return CompetitorProduct.objects.get(pk=pk)
+        except CompetitorProduct.DoesNotExist:
+            return None
+
+    @swagger_auto_schema(operation_description="Retrieve a competitor product")
+    def get(self, request, pk):
+        obj = self.get_object(pk)
+        if not obj:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = CompetitorProductSerializer(obj)
+        return Response(serializer.data)
 
     @swagger_auto_schema(
-        operation_summary="Save and Automate product updates",
-        operation_description="Scrape, save, and automate product monitoring.",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "user_identifier": openapi.Schema(type=openapi.TYPE_STRING, description="Unique user ID"),
-                "url": openapi.Schema(type=openapi.TYPE_STRING, description="Product URL"),
-                "update_frequency": openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description="Update frequency (minutes, hourly, daily, weekly, monthly)",
-                    default="hourly"
-                ),
-            },
-            required=["user_identifier", "url"],
-        ),
-        responses={
-            200: openapi.Response("Scraping successful, automation started."),
-            400: openapi.Response("Invalid request or incomplete data."),
-            500: openapi.Response("Scraping failed."),
-        },
+        operation_description="Update a competitor product (full)",
+        request_body=CompetitorProductSerializer
     )
+    def put(self, request, pk):
+        obj = self.get_object(pk)
+        if not obj:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = CompetitorProductSerializer(obj, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(
+        operation_description="Update a competitor product (partial)",
+        request_body=CompetitorProductSerializer
+    )
+    def patch(self, request, pk):
+        obj = self.get_object(pk)
+        if not obj:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = CompetitorProductSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @swagger_auto_schema(operation_description="Delete a competitor product")
+    def delete(self, request, pk):
+        obj = self.get_object(pk)
+        if not obj:
+            return Response({"error": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+        obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+# ScrapedData Views
+class ScrapeData(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="Scrape competitor data immediately")
     def post(self, request):
-        try:
-            # Extract required data
-            user_identifier = request.data.get('user_identifier')
-            url = request.data.get('url')
-            update_frequency = str(request.data.get('update_frequency', "hourly")).lower()  # Ensure it's a string
-
-            if not user_identifier or not url:
-                return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Validate update frequency
-            valid_frequencies = ["minutes", "hourly", "daily", "weekly", "monthly"]
-            if update_frequency not in valid_frequencies:
-                return Response(
-                    {"error": f"Invalid update frequency. Choose from {valid_frequencies}."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # 🚀 **Scrape product data immediately**
-            driver = setup_driver()
-            try:
-                product_data = extract_product_data(url, driver)
-                if not product_data.get("product_name") or not product_data.get("current_price"):
-                    logger.warning(f"Incomplete scraped data: {product_data}")
-                    return Response(
-                        {"error": "Incomplete data.", "scraped_data": product_data},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            except Exception as e:
-                logger.error(f"Error during scraping: {str(e)}")
-                return Response(
-                    {"error": "Failed to scrape product.", "details": str(e)},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-            finally:
-                driver.quit()
-
-            # Save the scraped product
-            scraped_entry = ScrapedData.objects.create(
-                user_identifier=user_identifier,
-                url=url,
-                product_name=product_data["product_name"],
-                current_price=product_data["current_price"],
-                previous_price=product_data.get("previous_price"),
-                discount=product_data.get("discount"),
-                description=product_data.get("description"),
-                update_frequency=str(update_frequency),   # Ensure only valid string values are stored
-            )
+        # Scraping logic here (not implemented in the example)
+        return Response({"status": "scrape started"}, status=status.HTTP_200_OK)
 
 
-            schedule_product_update(scraped_entry.id, update_frequency) # Default to 60 minutes if invalid
+class ScrapedDataList(APIView):
+    permission_classes = [permissions.IsAuthenticated]
 
-              # Pass integer here, not save it to model
-
-            return Response(
-                {
-                    "message": "Scraping successful. Product saved and automation started.",
-                    "user_identifier": user_identifier,
-                    "scraped_data": product_data,
-                },
-                status=status.HTTP_200_OK
-            )
-
-        except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            return Response(
-                {"error": "An unexpected error occurred.", "details": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
-from scraper.models import ScrapedData
-from scraper.serializers import ScrapedDataSerializer
-import logging
-from scraper.task import schedule_product_update, update_scraped_data
-
-logger = logging.getLogger(__name__)
-
-class ListSavedProductsView(APIView):
-    """
-    List all saved products for a given user.
-    """
-    @swagger_auto_schema(
-        operation_summary="List all saved products",
-        operation_description="Retrieve all products a user has saved.",
-        manual_parameters=[
-            openapi.Parameter('user_identifier', openapi.IN_QUERY, description="Unique user ID", type=openapi.TYPE_STRING, required=True)
-        ],
-        responses={200: ScrapedDataSerializer(many=True)}
-    )
+    @swagger_auto_schema(operation_description="View all scraped data")
     def get(self, request):
-        user_identifier = request.query_params.get('user_identifier')
-        if not user_identifier:
-            return Response({"error": "user_identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
-        products = ScrapedData.objects.filter(user_identifier=user_identifier)
-        serializer = ScrapedDataSerializer(products, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        scraped_data = ScrapedData.objects.all()
+        serializer = ScrapedDataSerializer(scraped_data, many=True)
+        return Response(serializer.data)
 
-class RetrieveScrapedProductView(APIView):
-    """
-    Retrieve a specific product by ID for a given user.
-    """
-    @swagger_auto_schema(
-        operation_summary="Retrieve a specific scraped product",
-        operation_description="Get details of a single scraped product by ID.",
-        manual_parameters=[
-            openapi.Parameter('user_identifier', openapi.IN_QUERY, description="Unique user ID", type=openapi.TYPE_STRING, required=True),
-            openapi.Parameter('product_id', openapi.IN_PATH, description="Product ID", type=openapi.TYPE_INTEGER, required=True)
-        ],
-        responses={200: ScrapedDataSerializer()}
-    )
+
+class ScrapedDataDetail(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="View scraped data for a specific product")
     def get(self, request, product_id):
-        user_identifier = request.query_params.get('user_identifier')
-        if not user_identifier:
-            return Response({"error": "user_identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
+        scraped_data = ScrapedData.objects.filter(id=product_id)
+        if not scraped_data.exists():
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = ScrapedDataSerializer(scraped_data, many=True)
+        return Response(serializer.data)
+
+
+# Recommendations Views
+class RecommendationList(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="View all recommendations")
+    def get(self, request):
+        recommendations = PriceRecommendation.objects.all()
+        serializer = PriceRecommendationSerializer(recommendations, many=True)
+        return Response(serializer.data)
+
+
+class RecommendationDetail(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(operation_description="View recommendation for a product")
+    def get(self, request, product_id):
         try:
-            product = ScrapedData.objects.get(id=product_id, user_identifier=user_identifier)
-            return Response(ScrapedDataSerializer(product).data, status=status.HTTP_200_OK)
-        except ScrapedData.DoesNotExist:
-            return Response({"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
-
-class DeleteScrapedProductView(APIView):
-    """
-    Delete a saved product for a given user.
-    """
-    @swagger_auto_schema(
-        operation_summary="Delete a scraped product",
-        operation_description="Remove a saved product.",
-        manual_parameters=[
-            openapi.Parameter('user_identifier', openapi.IN_QUERY, description="Unique user ID", type=openapi.TYPE_STRING, required=True),
-            openapi.Parameter('product_id', openapi.IN_PATH, description="Product ID", type=openapi.TYPE_INTEGER, required=True)
-        ],
-        responses={204: "Product deleted successfully."}
-    )
-    def delete(self, request, product_id):
-        user_identifier = request.query_params.get('user_identifier')
-        if not user_identifier:
-            return Response({"error": "user_identifier is required."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            product = ScrapedData.objects.get(id=product_id, user_identifier=user_identifier)
-            product.delete()
-            return Response({"message": "Product deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
-        except ScrapedData.DoesNotExist:
-            return Response({"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
-
-class UpdateScrapeSettingsView(APIView):
-    """
-    Update scrape settings (update frequency) for a saved product.
-    """
-    @swagger_auto_schema(
-        operation_summary="Update scrape settings",
-        operation_description="Modify update frequency for an existing product.",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                "user_identifier": openapi.Schema(type=openapi.TYPE_STRING, description="Unique user ID"),
-                "update_frequency": openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description="Update frequency (minutes, hourly, daily, weekly, monthly)",
-                    default="hourly"
-                )
-            },
-            required=["user_identifier", "update_frequency"]
-        ),
-        responses={200: "Update successful."}
-    )
-    def patch(self, request, product_id):
-        user_identifier = request.data.get('user_identifier')
-        update_frequency = request.data.get('update_frequency')
-        if not user_identifier or not update_frequency:
-            return Response({"error": "Missing required fields."}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            product = ScrapedData.objects.get(id=product_id, user_identifier=user_identifier)
-            product.update_frequency = update_frequency
-            product.save()
-            schedule_product_update(product.id, update_frequency)
-            return Response({"message": "Update frequency updated successfully."}, status=status.HTTP_200_OK)
-        except ScrapedData.DoesNotExist:
-            return Response({"error": "Product not found."}, status=status.HTTP_404_NOT_FOUND)
-
-
+            recommendation = PriceRecommendation.objects.get(product__id=product_id)
+        except PriceRecommendation.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = PriceRecommendationSerializer(recommendation)
+        return Response
 
